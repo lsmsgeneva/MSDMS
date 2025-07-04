@@ -1,0 +1,14 @@
+/node_modules/*
+/react_front/client/node_modules/*
+/.vscode/*
+/*.pptx
+/code_example.txt
+react_front/client/build
+node_modules
+react_front/client/public/images/*
+react_front/client/public/dataFiles/*
+react_front/client/public/tmp/*
+MSDMS_data/massbankFiles/*.txt
+.env
+.idea
+__pycache__/
