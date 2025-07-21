@@ -59,7 +59,7 @@ Load data programmatically:
     - `POSTGRES_USER`: Database username
     - `POSTGRES_PASSWORD`: Database password
     - `POSTGRES_DB`: Database name
-    - `POSTGRES_HOST`: Database host name
+    - `POSTGRES_HOST`: Database host name. Must be set to `postgredb` to match internal service name
 
     These credentials will be automatically passed to the container on deployment.
 
