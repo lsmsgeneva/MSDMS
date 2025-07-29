@@ -34,6 +34,7 @@ in the system to generate customized libraries. MSDMS is composed of 3 entities 
 
 Base functionality:
 - Docker version 28.0.0 or above
+- Docker Compose version 2.15.0 or above
 
 Load data programmatically:
 - Python 3
@@ -156,6 +157,17 @@ in the application container.
     pip install -r msdms_data_scripts/requirements.txt
     ```
 
+#### ⚠️ Issues with `virtualenv`
+
+If `virtualenv` causes issues, you can use Python’s built-in `venv` as following:
+
+```bash
+python3 -m venv msdms-env
+source msdms-env/bin/activate
+```
+Then continue with the usual installation steps.
+
+
 #### Deactivate the virtual environment
 ```bash
 deactivate
@@ -192,7 +204,7 @@ the IP address of the server in the address bar.
 The database schema is initialized automatically on the first deployment of the container:
 1. A schema template is defined in `psql/schema.template.sql`, using `{{DB_OWNER}}` as a placeholder for the database user
 2. The script `init-db/00-generate-schema.sh` is executed at startup by PostgreSQL (as part of Docker’s default behavior for scripts inside `/docker-entrypoint-initdb.d`)
-3. This script injects the actual credentials from the `.env` file into the template, generating `/tmp/01-init-schema.sql` inside the container
+3. This script injects the credentials from the `.env` file into the template, generating `/tmp/01-init-schema.sql` inside the container
 4. The generated SQL is then executed using `psql` to create the initial database schema
 
 This approach ensures that schema setup is both dynamic and reproducible, while avoiding accidental execution of the raw template
