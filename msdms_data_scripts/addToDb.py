@@ -1,12 +1,13 @@
-import psycopg2 as psql
-from psycopg2 import sql
-import re
 import os
-from tqdm import tqdm
-import sys
-from rdkit import Chem
-from dotenv import load_dotenv
+import psycopg2 as psql
+import re
 import shutil
+import sys
+from dotenv import load_dotenv
+from psycopg2 import sql
+from psycopg2.extras import execute_values
+from rdkit import Chem
+from tqdm import tqdm
 
 
 def read_file(file_path):
@@ -38,6 +39,7 @@ def read_file(file_path):
     except Exception as e:
         # Raise a custom error if the file can't be opened or read
         raise Exception(f"An error occurred while reading the file: {e}")
+
 
 def parse_compound_info(mb_file):
     """
@@ -98,7 +100,6 @@ def parse_compound_info(mb_file):
                 else:
                     dict_comp_info[attribute_key] = None
 
-
     # --- Normalize SMILES using RDKit (generate canonical version) ---
     if dict_comp_info.get('SMILES'):
         try:
@@ -122,6 +123,7 @@ def parse_compound_info(mb_file):
         dict_comp_info['COMPOUND_CLASS'] = None
 
     return dict_comp_info
+
 
 def parse_spectra_info(mb_file, file_path, source=""):
     """
@@ -176,7 +178,7 @@ def parse_spectra_info(mb_file, file_path, source=""):
     # --- SPLASH ID is optional; set to None if not present ---
     splash_filter = re.compile(r"^PK\$SPLASH:")
     splash_info = list(filter(splash_filter.match, mb_file))
-    dict_spec_info["SPLASH"] = None if len(splash_info)==0 else splash_info[0].split(": ")[1].strip()
+    dict_spec_info["SPLASH"] = None if len(splash_info) == 0 else splash_info[0].split(": ")[1].strip()
 
     # --- Extract instrument and measurement parameters from AC$ lines ---
     spectrum_info_filter = re.compile(r"^AC\$")
@@ -198,6 +200,55 @@ def parse_spectra_info(mb_file, file_path, source=""):
             # Example: AC$INSTRUMENT_TYPE: LC-ESI-QTOF
             dict_spec_info[info_split[0][3:]] = info_split[1].strip()
 
+        # --- MS$FOCUSED_ION lines ---
+        focused_ion_filter = re.compile(r"^MS\$FOCUSED_ION:")
+        focused_ion_info = list(filter(focused_ion_filter.match, mb_file))
+
+        dict_spec_info['CCS'] = None
+        dict_spec_info['SV'] = None
+        dict_spec_info['COV'] = None
+        dict_spec_info['MODIFIER'] = None
+
+        for line in focused_ion_info:
+            # --- CCS ---
+            if re.match(r"^MS\$FOCUSED_ION:\s*CCS", line):
+                # Extract numeric part before 'Å²'
+                value_part = re.split(r"CCS[:\s]*", line, maxsplit=1)[-1].strip()
+                match = re.search(r"[\d.]+", value_part)
+                if match:
+                    dict_spec_info['CCS'] = float(match.group(0))
+
+            # --- DMS (SV, COV, Modifier) ---
+            elif re.match(r"^MS\$FOCUSED_ION:\s*DMS", line, re.IGNORECASE):
+                # Example: MS$FOCUSED_ION: DMS 3000 V,45 V, MeOH
+                dict_spec_info['SV'] = None
+                dict_spec_info['COV'] = None
+                dict_spec_info['MODIFIER'] = None
+
+                value_part = re.split(r"DMS[:\s]*", line, maxsplit=1)[-1].strip()
+                parts = [p.strip() for p in value_part.split(",")]  # preserve empties
+
+                numeric_values = []
+                for p in parts:
+                    match = re.search(r"[-+]?\d*\.\d+|\d+", p)
+                    if match:
+                        numeric_values.append(float(match.group(0)))
+                    else:
+                        numeric_values.append(None)
+
+                # Assign SV and COV based on order
+                if len(numeric_values) >= 1 and numeric_values[0] is not None:
+                    dict_spec_info['SV'] = numeric_values[0]
+                if len(numeric_values) >= 2 and numeric_values[1] is not None:
+                    dict_spec_info['COV'] = numeric_values[1]
+
+                # Modifier detection
+                for p in parts:
+                    mod_match = re.search(r"[A-Za-z]{2,5}", p)
+                    if mod_match:
+                        dict_spec_info['MODIFIER'] = mod_match.group(0).strip()
+                        break
+
     # --- Ensure RETENTION_TIME field exists for schema consistency ---
     if 'RETENTION_TIME' not in dict_spec_info:
         dict_spec_info['RETENTION_TIME'] = None
@@ -210,11 +261,11 @@ def parse_spectra_info(mb_file, file_path, source=""):
     if 'FRAGMENTATION_MODE' not in dict_spec_info:
         dict_spec_info['FRAGMENTATION_MODE'] = None
 
-
     # --- Add the file path and name in the dictionary
     dict_spec_info['FILE_PATH'] = file_path
 
     return dict_spec_info
+
 
 def metabolite_query_builder(component_info):
     """
@@ -254,7 +305,7 @@ def metabolite_query_builder(component_info):
         component_info['FORMULA'],
         component_info['NAME']
     ]
-    
+
     query = """SELECT *
                FROM metabolites
                WHERE chemical_formula = %s
@@ -278,8 +329,9 @@ def metabolite_query_builder(component_info):
             query_vars.append(component_info[column])
 
     query += ";"
-      
+
     return query, query_vars
+
 
 def msdmsConnection():
     """
@@ -310,6 +362,7 @@ def msdmsConnection():
         return conn
     except:
         print("Unable to reach the database")
+
 
 def existInMetaboDb(compoundInfo):
     """
@@ -363,7 +416,7 @@ def existInMetaboDb(compoundInfo):
 
         try:
             # Execute INSERT and retrieve new ID
-            cur2.execute(insertMetaboQuery,insertMetaboVariables)
+            cur2.execute(insertMetaboQuery, insertMetaboVariables)
             newDataId = cur2.fetchone()[0]
             connection.commit()
         except:
@@ -376,27 +429,48 @@ def existInMetaboDb(compoundInfo):
 
     return newDataId
 
+
 def existInSpectraDb(spectrumInfo, metaboliteId, sourceFilePath, dataPath):
     """
     Checks whether a spectrum record already exists in the 'spectra' table of the database.
-    If not, inserts the new spectrum entry linked to a specific metabolite.
+    If not, inserts the spectrum along with its associated metadata and validated peak data
+    into the corresponding tables.
+
+    During the insertion process, the function verifies the integrity of the MassBank file’s
+    peak data. Spectra that lack a PK$PEAK section or contain malformed/non-numeric peak data
+    are skipped and not inserted into the database.
+
+    After a successful insertion, the processed MassBank file is moved from its input directory
+    to the permanent data storage path under 'MSDMS_data/massbankFiles/'.
 
     Args:
     -----
-    spectrumInfo (dict): A dictionary containing spectral metadata. Expected keys include:
+    spectrumInfo (dict): A dictionary containing the spectrum metadata. Expected keys include:
         - ACCESSION, SPLASH, INSTRUMENT_TYPE, DATE, ION_MODE,
-          COLLISION_ENERGY, MS_TYPE, SOURCE, FRAGMENTATION_MODE, RETENTION_TIME, FILE_PATH
+          COLLISION_ENERGY, MS_TYPE, SOURCE, FRAGMENTATION_MODE,
+          RETENTION_TIME, CCS, SV, COV, MODIFIER, FILE_PATH
 
-    metaboliteId (int): The ID of the metabolite in the 'metabolites' table
-                        to which this spectrum is related.
+    metaboliteId (int): The ID of the metabolite in the 'metabolites' table that this spectrum
+                        record is associated with.
 
-    sourceFilePath (str): Full path to the input file (e.g., data/MSBNK/AAFC/...)
+    sourceFilePath (str): The absolute path to the original MassBank file.
 
-    dataPath (str): The base folder for the input data (e.g., data/)
+    dataPath (str): The root folder of the dataset (e.g., 'data/'). Used to compute the relative
+                    path when moving the processed file to the permanent storage directory.
 
     Returns:
     --------
     None
+
+    Side Effects:
+    -------------
+    - Inserts a new record into the 'spectra' table if it does not already exist.
+    - Validates and inserts all (m/z, relative intensity) peaks into 'spectrum_peaks'.
+    - Skips entries that lack valid or correctly formatted peak data.
+    - Commits the transaction upon successful completion.
+    - Moves the processed file to:
+          MSDMS_data/massbankFiles/<relative_path>
+    - Prints diagnostic messages for invalid files, SQL errors, or failed file operations.
     """
 
     # Establish DB connection and create cursor
@@ -404,39 +478,59 @@ def existInSpectraDb(spectrumInfo, metaboliteId, sourceFilePath, dataPath):
     cur = connection.cursor()
 
     try:
-        # Check if spectrum already exists based on accession
-        cur.execute("SELECT * FROM spectra WHERE accession = %s;", 
-                    [spectrumInfo['ACCESSION']])
+        cur.execute("SELECT * FROM spectra WHERE accession = %s;", [spectrumInfo['ACCESSION']])
         rows = cur.fetchall()
         cur.close()
-    except:
-        print("INVALID SQL SELECT QUERY")
+    except Exception as e:
+        print("INVALID SQL SELECT QUERY:", e)
         connection.rollback()
         return
 
-    # If the spectrum does not exist, insert it
     if len(rows) == 0:
         try:
             cur2 = connection.cursor()
-            # Prepare INSERT query and parameters for new spectrum entry
-            insertSpectrumQuery = "INSERT INTO spectra( metabolite_id, splash, instrument_type, \
-                                collection_date, ionization_mode, collision_energy_voltage,\
-                                ms_type, accession, source, fragmentation_method, retention_time, file_path ) \
-                                VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);"
+            insertSpectrumQuery = """
+                                  INSERT INTO spectra (metabolite_id, splash, instrument_type,
+                                                       collection_date, ionization_mode, collision_energy_voltage,
+                                                       ms_type, accession, source, fragmentation_method,
+                                                       retention_time, ccs, sv, cov, modifier, file_path)
+                                  VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                                          %s) RETURNING spectrum_id; \
+                                  """
+
             insertSpectrumVariables = [
-                metaboliteId, spectrumInfo['SPLASH'], spectrumInfo['INSTRUMENT_TYPE'],
-                spectrumInfo['DATE'], spectrumInfo['ION_MODE'], spectrumInfo['COLLISION_ENERGY'],
-                spectrumInfo['MS_TYPE'], spectrumInfo['ACCESSION'], spectrumInfo['SOURCE'],
-                spectrumInfo['FRAGMENTATION_MODE'], spectrumInfo['RETENTION_TIME'], spectrumInfo['FILE_PATH']
+                metaboliteId,
+                spectrumInfo.get('SPLASH'),
+                spectrumInfo.get('INSTRUMENT_TYPE'),
+                spectrumInfo.get('DATE'),
+                spectrumInfo.get('ION_MODE'),
+                spectrumInfo.get('COLLISION_ENERGY'),
+                spectrumInfo.get('MS_TYPE'),
+                spectrumInfo.get('ACCESSION'),
+                spectrumInfo.get('SOURCE'),
+                spectrumInfo.get('FRAGMENTATION_MODE'),
+                spectrumInfo.get('RETENTION_TIME'),
+                spectrumInfo.get('CCS'),
+                spectrumInfo.get('SV'),
+                spectrumInfo.get('COV'),
+                spectrumInfo.get('MODIFIER'),
+                spectrumInfo.get('FILE_PATH')
             ]
 
             cur2.execute(insertSpectrumQuery, insertSpectrumVariables)
+            spectrum_id = cur2.fetchone()[0]
+
+            # Validate peaks before committing
+            success = insert_peaks_from_file(connection, spectrum_id, sourceFilePath)
+            if not success:
+                print(f"Entry {spectrumInfo.get('ACCESSION')} skipped due to invalid or missing peak data.")
+                connection.rollback()
+                return
+
             connection.commit()
 
-            # --- After successful DB insert, move the file ---
             relative_path = os.path.relpath(sourceFilePath, dataPath)
             destination_file_path = os.path.join('MSDMS_data/massbankFiles', relative_path)
-
             os.makedirs(os.path.dirname(destination_file_path), exist_ok=True)
             shutil.move(sourceFilePath, destination_file_path)
 
@@ -446,96 +540,153 @@ def existInSpectraDb(spectrumInfo, metaboliteId, sourceFilePath, dataPath):
         finally:
             connection.close()
 
-def alter_spectra_table(db_col_to_add, ms_field_name, dataPath, db_col_filtering=None, value_of_db_col_fitering=None, type_of_filtering="="):
+
+def extract_peaks_from_massbank_file(file_path):
     """
-    Adds new information to a specified column in the 'spectra' table of the msdms database,
-    based on values parsed from MassBank text files.
+    Parses and validates the PK$PEAK section of a MassBank spectrum file.
+
+    The function extracts triplets of numeric peak values (m/z, intensity, relative intensity)
+    from the PK$PEAK section. It ensures that:
+      - The section exists in the file.
+      - Each peak line has exactly three whitespace-separated columns.
+      - All columns contain valid numeric (integer or float) values.
+
+    If any malformed or non-numeric peak line is encountered, the entire entry is considered
+    invalid and flagged accordingly.
 
     Args:
     -----
-    db_col_to_add (str):
-        Name of the column in the 'spectra' table to be updated.
+    file_path (str): Path to the MassBank text file to be parsed.
 
-    ms_field_name (str):
-        The name of the field in the MassBank file from which to extract the new value
-        (e.g., 'AC$MASS_SPECTROMETRY: FRAGMENTATION_METHOD').
-
-    data_path : str
-        Path to the root directory containing MassBank .txt files and optional blacklist files.
-
-    db_col_filtering (str, optional):
-        Name of a column used to filter which rows to update in the 'spectra' table.
-
-    value_of_db_col_fitering (str, optional):
-        Value used in the filtering condition for db_col_filtering.
-
-    type_of_filtering (str, optional):
-        Type of comparison to apply when filtering the database column.
-        Defaults to "=". Supported operators: '=', '!=', '>', '<', '>=', '<='.
-
-    Example:
+    Returns:
     --------
-    alter_spectra_table(
-        db_col_to_add="fragmentation_method",
-        ms_field_name="AC$MASS_SPECTROMETRY: FRAGMENTATION_METHOD",
-        dataPath="/home/lsms/Documents/massbank/data/massbankFiles",
-        db_col_filtering="ms_type",
-        value_of_db_col_fitering="MS",
-        type_of_filtering="!="
-    )
+    tuple:
+        (valid_peaks, has_peak_section, has_valid_peaks)
+        where:
+        - valid_peaks (list[tuple[float, float]]): A list of (m/z, relative_intensity) pairs.
+        - has_peak_section (bool): True if a PK$PEAK section was found in the file.
+        - has_valid_peaks (bool): True if all peaks were correctly formatted and numeric.
+
+    Side Effects:
+    -------------
+    None
     """
+    valid_peaks = []
+    in_peak_section = False
+    has_peak_section = False
+    has_valid_peaks = True
 
-    # Step 1: If filtering is requested, fetch accessions from the DB
-    if db_col_filtering is not None and value_of_db_col_fitering is not None:
-        connection = msdmsConnection()
-        with connection.cursor() as cur:
-            try:
-                # Construct the SQL query dynamically with optional filtering
-                fetchQuery = sql.SQL(
-                    "SELECT accession FROM spectra WHERE {filtering_col} {filtering_type} %s and {col_to_add} is null;"
-                ).format(
-                    filtering_col=sql.Identifier(db_col_filtering),
-                    filtering_type=sql.SQL(type_of_filtering),
-                    col_to_add=sql.Identifier(db_col_to_add)
-                )
-                cur.execute(fetchQuery, (value_of_db_col_fitering,))
-                rows = cur.fetchall()
-                cur.close()
+    with open(file_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            trimmed = line.strip()
 
-                # Build the list of filenames to process
-                fileList = [elem[0]+".txt" for elem in rows]
-            except:
-                connection.close()
-                raise("INVALID SQL QUERY")    
-    else:
-        # If no filtering is specified, process all files in the data path
-        fileList = os.listdir(dataPath)
+            if trimmed.startswith("PK$PEAK:"):
+                in_peak_section = True
+                has_peak_section = True
+                continue
 
-    # Step 2: Iterate through files and update the database
-    with connection.cursor() as cur2:
-        for f in tqdm(fileList):
-            fileRows = read_file(os.path.join(dataPath, f))
+            if in_peak_section:
+                # End of peak section
+                if not trimmed or trimmed.startswith("//") or re.match(r"^[A-Z]{2}\$", trimmed):
+                    in_peak_section = False
+                    continue
 
-            # Extract the desired metadata field from the MassBank file
-            spectrum_info = [s for s in fileRows if ms_field_name in s]
+                parts = re.split(r"\s+", trimmed)
 
-            if len(spectrum_info) > 0:
-                # Get accession ID from file
-                accession_filter = [s for s in fileRows if "ACCESSION: " in s][0].strip().split(": ")[1].split("-")[-1]
-                # Extract the value to insert (last item on the matched line)
-                new_data = spectrum_info[0].strip().split(" ")[-1]
+                # Must have exactly 3 columns
+                if len(parts) != 3:
+                    has_valid_peaks = False
+                    break
 
                 try:
-                    # Dynamically update the specified column in the spectra table
-                    update_query = sql.SQL(
-                        "UPDATE spectra SET {col_to_add} = %s WHERE accession = %s;"
-                    ).format(col_to_add=sql.Identifier(db_col_to_add))
+                    mz = float(parts[0])
+                    intensity = float(parts[1])
+                    rel_int = float(parts[2])
+                    valid_peaks.append((mz, rel_int))
+                except ValueError:
+                    has_valid_peaks = False
+                    break
 
-                    cur2.execute(update_query, (new_data, accession_filter))
-                except:
-                    connection.close()
-                    raise("INVALID SQL QUERY")
+    return valid_peaks, has_peak_section, has_valid_peaks
 
-    # Step 3: Commit changes and close connection
-    connection.commit()
-    connection.close()
+
+def insert_peak_batch(connection, spectrum_id, peaks):
+    """
+    Inserts a batch of validated (m/z, relative intensity) peaks into the 'spectrum_peaks' table.
+
+    This helper function uses PostgreSQL's `execute_values()` for efficient bulk insertion.
+
+    Args:
+    -----
+    connection (psycopg2.Connection): Active database connection object.
+    spectrum_id (int): The ID of the spectrum in the 'spectra' table to which the peaks belong.
+    peaks (list[tuple[float, float]]): List of (m/z, relative_intensity) pairs to insert.
+
+    Returns:
+    --------
+    None
+
+    Side Effects:
+    -------------
+    - Executes an INSERT operation into the 'spectrum_peaks' table.
+    - Does not commit the transaction; commits must be handled by the caller.
+    """
+    with connection.cursor() as cur:
+        query = """
+                INSERT INTO spectrum_peaks (spectrum_id, mz_value, rel_int)
+                VALUES %s \
+                """
+        data = [(spectrum_id, mz, rel_int) for mz, rel_int in peaks]
+        execute_values(cur, query, data)
+
+
+def insert_peaks_from_file(connection, spectrum_id, file_path, batch_size=500):
+    """
+    Validates and inserts all peak data from a MassBank spectrum file into the database.
+
+    This function first calls `extract_peaks_from_massbank_file()` to retrieve and verify
+    the peak data. Only spectra that contain a valid PK$PEAK section with properly formatted
+    numeric triplets are processed. If the data is missing or malformed, the entry is skipped.
+
+    Peak data is inserted in batches for performance efficiency.
+
+    Args:
+    -----
+    connection (psycopg2.Connection): Active database connection.
+    spectrum_id (int): ID of the corresponding spectrum in the 'spectra' table.
+    file_path (str): Path to the MassBank file containing the peak data.
+    batch_size (int, optional): Number of peaks to insert per batch (default: 500).
+
+    Returns:
+    --------
+    bool:
+        True  – if all peaks were valid and inserted successfully.
+        False – if the file lacked a PK$PEAK section or contained invalid/malformed peak data.
+
+    Side Effects:
+    -------------
+    - Inserts peak data into the 'spectrum_peaks' table in batch mode.
+    - Prints warnings and skips insertion for files with missing or invalid peak data.
+    """
+    peaks, has_peak_section, has_valid_peaks = extract_peaks_from_massbank_file(file_path)
+
+    if not has_peak_section:
+        print(f"Skipping file {file_path}: no PK$PEAK section found.")
+        return False
+    if not has_valid_peaks:
+        print(f"Skipping file {file_path}: invalid or malformed peak data.")
+        return False
+    if not peaks:
+        print(f"Skipping file {file_path}: no valid peaks extracted.")
+        return False
+
+    # Insert peaks in batches
+    batch = []
+    for mz, rel_int in peaks:
+        batch.append((mz, rel_int))
+        if len(batch) >= batch_size:
+            insert_peak_batch(connection, spectrum_id, batch)
+            batch = []
+    if batch:
+        insert_peak_batch(connection, spectrum_id, batch)
+    return True

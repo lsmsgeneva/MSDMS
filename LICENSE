@@ -1,0 +1,33 @@
+Copyright (c) 2025 University of Geneva
+Life Sciences Mass Spectrometry Research Group
+
+Permission is hereby granted to any person obtaining a copy of this software
+and associated documentation files (collectively, the "Software"), to use the
+Software for research and academic purposes, subject to the following conditions:
+
+1. Attribution
+   Any use of this Software, in whole or in part, must properly acknowledge
+   the authors and the Life Sciences Mass Spectrometry research group at the
+   University of Geneva. Until an official publication becomes available, users
+   must reference the GitHub repository (https://github.com/lsmsgeneva/MSDMS)
+   in any academic or scientific output that makes use of the Software.
+
+2. No Modification
+   The Software may not be modified, adapted, translated, reverse engineered,
+   or used to create derivative works without explicit written permission from
+   the principal investigator of the Life Sciences Mass Spectrometry research group.
+
+3. No Redistribution of Modified Versions
+   Redistribution of the Software is permitted only in its original,
+   unmodified form and must retain this license and all copyright notices.
+   Redistribution of modified versions is strictly prohibited.
+
+4. No Commercial Use
+   The Software may not be used for commercial purposes without explicit
+   written permission from the principal investigator of the Life Sciences
+   Mass Spectrometry research group.
+
+5. Disclaimer
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED. IN NO EVENT SHALL THE AUTHORS OR THE UNIVERSITY OF GENEVA BE LIABLE
+   FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY ARISING FROM THE USE OF THE SOFTWARE.

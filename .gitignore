@@ -12,3 +12,6 @@ MSDMS_data/massbankFiles/*.txt
 .env
 .idea
 __pycache__/
+coverage/
+data/*
+!data/*.tar.gz

@@ -16,6 +16,9 @@
   - [Project structure](#project-structure)
 - [Known Issues](#known-issues)
   - [Drag and Drop Fails on Chrome (Ubuntu 22.04)](#drag-and-drop-fails-on-chrome-ubuntu-2204)
+- [License and Citation](#license-and-citation)
+  - [Citation](#citation)
+  - [Authors](#authors)
 ---
 
 
@@ -77,23 +80,23 @@ Load data programmatically:
     first decompress it:
     ```bash
     tar -xzf data/HMDB.tar.gz -C data/
-    tar -xzf data/MSBNK.tar.gz -C data/
+    tar -xzf data/MSBNK.tar.gz -C data/ --strip-components=1
     ```
-    This will extract the data files into the correct `data/` folder structure required by the system.
+    This creates the directory structure expected by MSDMS.
     
-    If you plan to upload a large dataset (more than 20,000 entries), we recommend using the **programmatic upload method** for 
-    better performance and reliability (see [Option B](#option-b-upload-spectrum-data-programmatically)).
-    
-    > 💡 You can also upload data through the MSDMS web interface after deploying the application (see [Option A](#option-a-upload-spectrum-data-via-the-user-interface)).
-    
-    **Important:** Keep a backup of your data. Deleting entries through MSDMS will also remove the corresponding files from the 
-    `MSDMS_data` folder (used as a Docker volume).
+    > 💡 After deploying MSDMS, you can load the data either through the web interface 
+     ([Option A](#option-a-upload-spectrum-data-via-the-user-interface)) or programmatically ([Option B](#option-b-upload-spectrum-data-programmatically)).
+
+    > ⚠️ **Important:** The full base library included with MSDMS contains more than 20,000 spectra. For datasets of this size,
+     we strongly recommend using Option B (programmatic upload) for speed and reliability. Option A still works, but may be noticeably slower.
+   
+    **Always keep a backup of your data.** Deleting entries through MSDMS will also remove the corresponding files from the `MSDMS_data` Docker volume.
 
 ### Option A: Upload Spectrum Data via the User Interface
 
 In MSDMS, you can upload a complete library of spectra directly from the UI by navigating to `Menu > Upload New Data`.
 
-This interface performs the following checks:
+The interface automatically:
 1. Validates the format of your MassBank files
 2. Verifies that the entries do not already exist in the database
 3. Checks for metabolite name conflicts
@@ -101,7 +104,8 @@ This interface performs the following checks:
 Preview entries before importing, then click `Write data` to load entries into the database and store the MassBank text files 
 in the application container.
 
-> ⚠️ For large datasets (20,000+ entries), we recommend the programmatic upload method for better speed and stability.
+You may upload individual files, folders, or even the entire unpacked `data/` directory via drag-and-drop.
+
 
 ### Option B: Upload Spectrum Data Programmatically
 
@@ -110,11 +114,14 @@ in the application container.
 2. Load your MassBank data library into the database:
 
     ```bash
-    python3 msdms_data_scripts/load_data_in_db.py newData data/
+    python3 msdms_data_scripts/load_data_in_db.py newData data/ --source
     ```
-    You can run this command at any time to add new entries.
+    You can run this command at any time to import or reimport all entries.
 
-3. Update specific database columns efficiently without reloading the entire dataset. For example, to update collision_energy_voltage values:
+    **Note:** The `source` option is **recommended:** it automatically uses the top-level folder names inside `data/` 
+    as source identifiers, improving the organization of large datasets.
+
+3. Update specific database columns efficiently without reloading the entire dataset. For example, to update `collision_energy_voltage` values:
 
     ```bash
     python3 msdms_data_scripts/load_data_in_db.py update collision_energy_voltage COLLISION_ENERGY data/
@@ -122,17 +129,12 @@ in the application container.
    - `COLLISION_ENERGY` is the field name in the MassBank file
    - `collision_energy_voltage` is the database column to update
    - `data/` is the folder containing your MassBank files
+   - **Note:** Spectrum peak data cannot be updated with this functionality — they must be reloaded using the `newData` mode, which fully reimports the spectrum data
 
-4. **Optional:** Use the first-level folder names in your data directory as source identifiers:
-
-    ```bash
-    python3 msdms_data_scripts/load_data_in_db.py newData data/ --source
-    ```
-
-5. **Optional:** Control parallel file loading by specifying the number of workers (default is 8):
+4. **Optional:** Control parallel file loading by specifying the number of workers (default is 8):
 
     ```bash
-    python3 msdms_data_scripts/load_data_in_db.py newData data/ --workers 12
+    python3 msdms_data_scripts/load_data_in_db.py newData data/ --source --workers 12
     ```
 ---
 
@@ -230,3 +232,29 @@ There is a known issue with the drag-and-drop functionality on **Chrome running 
 - Firefox (Ubuntu 22.04)
 - Chrome (Windows/macOS)
 - Microsoft Edge
+
+---
+
+## License and Citation
+
+This software is © 2025 University of Geneva – Life Sciences Mass Spectrometry Research Group.
+It is freely available for academic and research use, but redistribution and modification are restricted.
+Please refer to the [LICENSE](LICENSE) file for the full terms of use.
+
+### Citation
+
+Until a peer-reviewed publication becomes available, please cite the software as follows:
+
+**MSDMS: Mass Spectrometry Data Management System (Version 2.4.3)**
+Life Sciences Mass Spectrometry Research Group, University of Geneva.
+GitHub Repository: https://github.com/lsmsgeneva/MSDMS
+
+### Authors
+
+MSDMS has been developed by the LSMS Team at the University of Geneva:
+
+* **Quentin Rouchon** — Developer
+* **Boris Schnider** — Developer
+* **Prof. Gérard Hopfgartner** — Supervisor
+
+Special thanks to all contributors and testers who supported the development of this project.

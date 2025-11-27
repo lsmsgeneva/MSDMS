@@ -6,6 +6,8 @@ MassBank Data Loader and Updater Script
 This script processes MassBank-formatted `.txt` files to insert new compound and spectra
 data into a database or update existing entries. It supports recursive directory scanning,
 blacklist filtering, parallel file processing, and selective field updates in the 'spectra' table.
+When using the new data functionality, associated spectrum peak information is also extracted
+and stored, but peak data are not affected by update operations.
 
 Functions:
 ----------
@@ -57,10 +59,15 @@ Notes:
 - Be cautious when running the update function — incorrect field mapping may cause SQL errors.
 """
 
-import os, sys, re, glob
+import glob
+import os
+import re
+import sys
 from multiprocessing import Pool
 from tqdm import tqdm
+
 import addToDb
+
 
 def process_single_file(args):
     """
@@ -101,6 +108,7 @@ def process_single_file(args):
     except Exception as e:
         print(f"Error processing file {f}: {e}")
 
+
 def load_data(data_path, use_folder_as_source=False, num_workers=8):
     """
     Load and process MassBank .txt files in parallel, inserting valid entries into the database.
@@ -139,6 +147,7 @@ def load_data(data_path, use_folder_as_source=False, num_workers=8):
     # Process files in parallel
     with Pool(processes=num_workers) as pool:
         list(tqdm(pool.imap_unordered(process_single_file, pool_args), total=len(pool_args)))
+
 
 def updateSpectraTable(dbCol, fieldName, dataPath, use_folder_as_source=False):
     """

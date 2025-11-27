@@ -4,7 +4,7 @@ networks:
 
 services:
   frontend:
-    image: lsmsgeneva/msdms-frontend:2.4.2
+    image: lsmsgeneva/msdms-frontend:2.4.3
     container_name: msdms_frontend
     restart: "no"
     volumes:
@@ -14,7 +14,7 @@ services:
     command: [ "true" ]
 
   backend:
-    image: lsmsgeneva/msdms-backend:2.4.2
+    image: lsmsgeneva/msdms-backend:2.4.3
     container_name: msdms_backend
     restart: always
     env_file:
