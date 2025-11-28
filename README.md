@@ -209,14 +209,14 @@ The database schema is initialized automatically on the first deployment of the 
 3. This script injects the credentials from the `.env` file into the template, generating `/tmp/01-init-schema.sql` inside the container
 4. The generated SQL is then executed using `psql` to create the initial database schema
 
-This approach ensures that schema setup is both dynamic and reproducible, while avoiding accidental execution of the raw template
+This approach ensures that schema setup is both dynamic and reproducible, while avoiding accidental execution of the raw template.
 
 ### Project structure
 The application is split in four containers:
 - `nginx`: Server services
 - `postgredb`: Contains the PostgreSQL database
-- `backend`: Manages the interaction of the frontend with the PostgreSQL database and the data files. Based on `Express` framework
-- `frontend`: User interface based on `React` framework
+- `backend`: Manages the interaction of the frontend with the PostgreSQL database and the data files. Based on `Express.js` framework
+- `frontend`: User interface based on `React.js` library
 
 ---
 
