@@ -237,7 +237,7 @@ There is a known issue with the drag-and-drop functionality on **Chrome running 
 
 ## License and Citation
 
-This software is © 2025 University of Geneva – Life Sciences Mass Spectrometry Research Group.
+This software is © 2025 Life Sciences Mass Spectrometry Research Group – University of Geneva.
 It is freely available for academic and research use, but redistribution and modification are restricted.
 Please refer to the [LICENSE](LICENSE) file for the full terms of use.
 
