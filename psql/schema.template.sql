@@ -91,6 +91,7 @@ CREATE TABLE public.spectra (
                                 modifier character varying(5)
 );
 
+CREATE INDEX idx_spectra_metabolite_id ON public.spectra (metabolite_id);
 CREATE INDEX spectra_retention_time_idx ON public.spectra (retention_time);
 CREATE INDEX spectra_ccs_idx ON public.spectra (ccs);
 CREATE INDEX spectra_sv_idx ON public.spectra (sv);
